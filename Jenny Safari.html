@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Unendliche Liebe</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Inter:wght@400;600&display=swap');
+
+        :root { 
+            --pink: #ff85a2; 
+            --dark: #06060c; 
+        }
+
+        /* iOS Safari Fixes */
+        * { 
+            -webkit-tap-highlight-color: transparent; 
+            box-sizing: border-box; 
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        
+        html, body {
+            margin: 0; padding: 0; width: 100%; 
+            height: 100vh;
+            height: -webkit-fill-available;
+            overflow: hidden; 
+            background-color: var(--dark); 
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            position: fixed;
+            overscroll-behavior: none; /* Verhindert Bounce auf iOS */
+        }
+
+        #canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1; display: block;
+            touch-action: none; /* Verhindert Zoom auf iOS */
+        }
+
+        .ui-layer {
+            position: absolute; z-index: 10; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: flex-start; 
+            padding-top: max(env(safe-area-inset-top), 20px);
+            pointer-events: none;
+        }
+
+        .love-header {
+            font-family: 'Dancing Script', cursive;
+            font-size: clamp(1.8rem, 8vw, 3rem);
+            color: var(--pink);
+            text-shadow: 0 0 15px rgba(255,133,162,0.6);
+            margin-top: 40px;
+            margin-bottom: 20px;
+            opacity: 0; transform: translateY(-15px);
+            text-align: center; padding: 0 20px;
+            transition: all 1.5s ease-out;
+        }
+
+        .timer-container {
+            background: rgba(15, 15, 25, 0.5);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            padding: 20px; border-radius: 24px;
+            border: 1px solid rgba(255,133,162,0.3);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+            opacity: 0; 
+            transition: all 1.2s ease-out 0.5s;
+            pointer-events: auto;
+            width: 88%; max-width: 360px;
+        }
+
+        .visible { opacity: 1 !important; transform: translateY(0) !important; }
+
+        .timer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .timer-sub-grid {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px;
+            margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);
+            padding-top: 15px;
+        }
+
+        .unit { display: flex; flex-direction: column; align-items: center; }
+        .value {
+            font-size: clamp(1.1rem, 5vw, 1.5rem);
+            font-weight: 700; color: #fff;
+            font-variant-numeric: tabular-nums;
+        }
+        .label {
+            font-size: 0.55rem; text-transform: uppercase;
+            letter-spacing: 1px; color: var(--pink);
+            margin-top: 2px; font-weight: 600;
+        }
+
+        #start-overlay {
+            position: fixed; inset: 0;
+            background: var(--dark); z-index: 100;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            transition: opacity 0.8s ease-in-out;
+            touch-action: manipulation;
+            -webkit-touch-callout: none;
+        }
+
+        .pulse-heart {
+            font-size: 90px;
+            animation: heartBeat 1.4s infinite ease-in-out;
+            cursor: pointer;
+            filter: drop-shadow(0 0 10px var(--pink));
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation; /* Verbessert Touch auf iOS */
+            -webkit-touch-callout: none; /* Verhindert Kontextmenü auf iOS */
+        }
+
+        @keyframes heartBeat {
+            0%, 100% { transform: scale(1); }
+            15% { transform: scale(1.18); }
+            30% { transform: scale(1.08); }
+            45% { transform: scale(1.25); }
+        }
+
+        .hidden { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="start-overlay">
+        <div class="pulse-heart" id="start-btn">❤️</div>
+        <p class="text-pink-300 mt-8 tracking-widest text-[11px] opacity-60 uppercase">Tippe auf das Herz</p>
+    </div>
+
+    <div class="ui-layer">
+        <h1 id="header" class="love-header">Ich liebe dich seit...</h1>
+        <div id="timer" class="timer-container">
+            <div class="timer-grid">
+                <div class="unit"><span id="y" class="value">-</span><span class="label">Jahre</span></div>
+                <div class="unit"><span id="mo" class="value">-</span><span class="label">Monate</span></div>
+                <div class="unit"><span id="d" class="value">-</span><span class="label">Tage</span></div>
+            </div>
+            <div class="timer-sub-grid">
+                <div class="unit"><span id="h" class="value">00</span><span class="label">Std</span></div>
+                <div class="unit"><span id="m" class="value">00</span><span class="label">Min</span></div>
+                <div class="unit"><span id="s" class="value">00</span><span class="label">Sek</span></div>
+            </div>
+        </div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('start-overlay');
+        const startBtn = document.getElementById('start-btn');
+        const header = document.getElementById('header');
+        const timerUI = document.getElementById('timer');
+
+        // KORREKTUR: 01.10.2022 (Monate sind 0-basiert: Oktober = 9)
+        const startDate = new Date(2022, 9, 1, 0, 0, 0); 
+
+        let width, height;
+        let trees = [];
+        let grass = [];
+        let animationStarted = false;
+        let growthProgress = 0; 
+        let animationFrame = null;
+
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            const dpr = Math.min(window.devicePixelRatio || 1, 2); // Limitiere für bessere Performance
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            canvas.style.width = width + 'px';
+            canvas.style.height = height + 'px';
+            ctx.scale(dpr, dpr);
+        }
+
+        function updateTimer() {
+            const now = new Date();
+            
+            // Berechne Jahre, Monate, Tage korrekt
+            let years = now.getFullYear() - startDate.getFullYear();
+            let months = now.getMonth() - startDate.getMonth();
+            let days = now.getDate() - startDate.getDate();
+
+            if (days < 0) {
+                months--;
+                const lastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+                days += lastMonth.getDate();
+            }
+            if (months < 0) { 
+                years--; 
+                months += 12; 
+            }
+
+            // Berechne Stunden, Minuten, Sekunden
+            const diffMs = now.getTime() - startDate.getTime();
+            const totalSeconds = Math.floor(diffMs / 1000);
+            const hours = Math.floor(totalSeconds / 3600) % 24;
+            const minutes = Math.floor(totalSeconds / 60) % 60;
+            const seconds = totalSeconds % 60;
+
+            document.getElementById('y').textContent = years;
+            document.getElementById('mo').textContent = months;
+            document.getElementById('d').textContent = days;
+            document.getElementById('h').textContent = String(hours).padStart(2, '0');
+            document.getElementById('m').textContent = String(minutes).padStart(2, '0');
+            document.getElementById('s').textContent = String(seconds).padStart(2, '0');
+        }
+
+        class Branch {
+            constructor(x, y, angle, len, thickness, depth) {
+                this.x = x; 
+                this.y = y; 
+                this.angle = angle;
+                this.targetLen = len; 
+                this.len = 0;
+                this.thickness = thickness; 
+                this.depth = depth;
+                this.children = [];
+                this.blossoms = [];
+                this.growthSpeed = (0.8 + Math.random() * 1.0); // Etwas schneller
+                this.isFinished = false;
+
+                if (depth > 0) {
+                    const childCount = (depth > 5) ? 2 : (Math.random() > 0.4 ? 3 : 2);
+                    for (let i = 0; i < childCount; i++) {
+                        const newAngle = angle + (Math.random() - 0.5) * 0.9;
+                        const newLen = len * (0.7 + Math.random() * 0.2);
+                        this.children.push(new Branch(0, 0, newAngle, newLen, thickness * 0.7, depth - 1));
+                    }
+                } else {
+                    // Mehr Blüten für schöneren Effekt
+                    for (let i = 0; i < 4; i++) {
+                        this.blossoms.push({
+                            ox: (Math.random() - 0.5) * 16,
+                            oy: (Math.random() - 0.5) * 16,
+                            size: 0, 
+                            targetSize: 2.5 + Math.random() * 4,
+                            alpha: 0
+                        });
+                    }
+                }
+            }
+
+            draw() {
+                const endX = this.x + Math.cos(this.angle) * this.len;
+                const endY = this.y + Math.sin(this.angle) * this.len;
+
+                // Zeichne Ast
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+                ctx.lineTo(endX, endY);
+                ctx.lineWidth = Math.max(0.5, this.thickness);
+                ctx.strokeStyle = `rgba(255, 200, 220, ${0.3 + (this.depth * 0.05)})`;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                if (this.len < this.targetLen) {
+                    this.len += this.growthSpeed;
+                    growthProgress += 0.0004; // Etwas schneller für Sonne
+                } else {
+                    this.isFinished = true;
+                    if (this.children.length > 0) {
+                        this.children.forEach(child => {
+                            child.x = endX; 
+                            child.y = endY;
+                            child.draw();
+                        });
+                    }
+                    // Zeichne Blüten
+                    if (this.depth === 0) {
+                        this.blossoms.forEach(b => {
+                            if (b.size < b.targetSize) b.size += 0.12;
+                            if (b.alpha < 1) b.alpha += 0.04;
+                            ctx.beginPath();
+                            ctx.arc(endX + b.ox, endY + b.oy, b.size, 0, Math.PI * 2);
+                            ctx.fillStyle = `rgba(255, 130, 180, ${b.alpha * 0.7})`;
+                            ctx.fill();
+                        });
+                    }
+                }
+            }
+        }
+
+        function drawSunrise(progress) {
+            // Langsamerer, sanfter Sonnenaufgang
+            const p = Math.min(progress * 1.2, 1); 
+            
+            // Sonne steigt von unten nach oben (über den Köpfen, aber nicht zu hoch)
+            const sunStartY = height * 0.9; // Startet tiefer
+            const sunEndY = height * 0.35;  // Endet nicht zu hoch (damit Paar sichtbar)
+            const sunY = sunStartY - ((sunStartY - sunEndY) * p);
+            const sunSize = 40 + (18 * p);
+
+            // Himmel-Gradient
+            const grad = ctx.createRadialGradient(width/2, sunY, 0, width/2, sunY, height * 0.9);
+            grad.addColorStop(0, `rgba(255, 100, 70, ${0.5 * p})`);
+            grad.addColorStop(0.4, `rgba(255, 50, 80, ${0.25 * p})`);
+            grad.addColorStop(1, 'rgba(6, 6, 12, 0)');
+            
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+
+            // Sonne zeichnen
+            if (p > 0.02) {
+                ctx.save();
+                ctx.shadowBlur = 45 * p;
+                ctx.shadowColor = 'rgba(255, 80, 50, 0.5)';
+                ctx.beginPath();
+                ctx.arc(width/2, sunY, sunSize, 0, Math.PI * 2);
+                const sunGrad = ctx.createRadialGradient(width/2, sunY, 0, width/2, sunY, sunSize);
+                sunGrad.addColorStop(0, `rgba(255, 255, 230, ${0.8 * p})`);
+                sunGrad.addColorStop(0.5, `rgba(255, 150, 90, ${0.4 * p})`);
+                sunGrad.addColorStop(1, `rgba(255, 78, 80, 0)`);
+                ctx.fillStyle = sunGrad;
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        function drawCouple() {
+            const centerX = width / 2;
+            const baseY = height - 8;
+            const scale = Math.min(width, height) / 650; // Etwas größer (war 700)
+            
+            ctx.fillStyle = '#000000'; // Komplett schwarz für bessere Sichtbarkeit
+            
+            // Person links (größer)
+            ctx.beginPath();
+            ctx.ellipse(centerX - 11 * scale, baseY - 52 * scale, 15 * scale, 42 * scale, 0.1, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Person rechts (kleiner, anliegend)
+            ctx.beginPath();
+            ctx.ellipse(centerX + 9 * scale, baseY - 48 * scale, 13 * scale, 39 * scale, -0.1, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Köpfe
+            ctx.beginPath();
+            ctx.arc(centerX - 11 * scale, baseY - 97 * scale, 9 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(centerX + 8 * scale, baseY - 91 * scale, 8 * scale, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawGrass() {
+            grass.forEach(g => {
+                ctx.beginPath();
+                ctx.moveTo(g.x, height);
+                ctx.quadraticCurveTo(g.x + g.tilt, height - g.h / 2, g.x + g.tilt * 1.3, height - g.h);
+                ctx.strokeStyle = `rgba(255, 133, 162, ${g.alpha})`;
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+            });
+        }
+
+        function animate() {
+            if (!animationStarted) return;
+            
+            // Dunkler Himmel mit leichtem Blau-Übergang
+            const skyB = Math.floor(12 + (18 * Math.min(growthProgress, 1)));
+            ctx.fillStyle = `rgb(6, 6, ${skyB})`;
+            ctx.fillRect(0, 0, width, height);
+            
+            drawSunrise(growthProgress);
+            trees.forEach(t => t.draw());
+            drawGrass();
+            drawCouple(); // Paar zuletzt = im Vordergrund
+            
+            animationFrame = requestAnimationFrame(animate);
+        }
+
+        function init(e) {
+            if (e) e.preventDefault();
+            if (animationStarted) return;
+            
+            animationStarted = true;
+            overlay.classList.add('hidden');
+            
+            setTimeout(() => {
+                header.classList.add('visible');
+                timerUI.classList.add('visible');
+            }, 400); 
+            
+            resize();
+            
+            // Gras generieren
+            for(let i = 0; i < 200; i++) {
+                grass.push({
+                    x: Math.random() * width,
+                    h: 14 + Math.random() * 32,
+                    tilt: (Math.random() - 0.5) * 14,
+                    alpha: 0.12 + Math.random() * 0.25
+                });
+            }
+
+            // Bäume erstellen (etwas näher zur Mitte für bessere Sichtbarkeit)
+            const treeBaseLen = height * 0.15;
+            trees.push(new Branch(width * 0.18, height, -Math.PI / 2.05, treeBaseLen, 7, 8));
+            trees.push(new Branch(width * 0.82, height, -Math.PI / 1.95, treeBaseLen, 7, 8));
+            
+            updateTimer();
+            setInterval(updateTimer, 1000);
+            animate();
+        }
+
+        // Touch- und Click-Events für iOS - mehrere Fallbacks
+        startBtn.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            init(e);
+        }, {passive: false});
+        
+        startBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            init(e);
+        });
+        
+        // Zusätzlicher Fallback für iOS
+        startBtn.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            init(e);
+        }, {passive: false});
+        
+        // Verhindere Doppel-Tap Zoom auf iOS
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function (e) {
+            const now = Date.now();
+            if (now - lastTouchEnd <= 300) {
+                e.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, false);
+        
+        // Resize Handler
+        let resizeTimeout;
+        window.addEventListener('resize', () => { 
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                if(animationStarted) {
+                    resize();
+                    // Neu-Initialisierung der Elemente nach Rotation
+                    trees = [];
+                    grass = [];
+                    growthProgress = 0;
+                    
+                    for(let i = 0; i < 200; i++) {
+                        grass.push({
+                            x: Math.random() * width,
+                            h: 14 + Math.random() * 32,
+                            tilt: (Math.random() - 0.5) * 14,
+                            alpha: 0.12 + Math.random() * 0.25
+                        });
+                    }
+                    
+                    const treeBaseLen = height * 0.15;
+                    trees.push(new Branch(width * 0.18, height, -Math.PI / 2.05, treeBaseLen, 7, 8));
+                    trees.push(new Branch(width * 0.82, height, -Math.PI / 1.95, treeBaseLen, 7, 8));
+                }
+            }, 100);
+        });
+        
+        // Initialer Resize
+        resize();
+    </script>
+</body>
+</html>
